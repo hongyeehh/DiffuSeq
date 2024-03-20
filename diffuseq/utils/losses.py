@@ -25,22 +25,13 @@ def normal_kl(mean1, logvar1, mean2, logvar2):
 
     # Force variances to be Tensors. Broadcasting helps convert scalars to
     # Tensors, but it does not work for th.exp().
-    logvar1, logvar2 = [
-        x if isinstance(x, th.Tensor) else th.tensor(x).to(tensor)
-        for x in (logvar1, logvar2)
-    ]
+    logvar1, logvar2 = [x if isinstance(x, th.Tensor) else th.tensor(x).to(tensor) for x in (logvar1, logvar2)]
 
     # print(logvar2.shape)
     # temp1 = 0.5 * (-1.0 + logvar2 - logvar1 + th.exp(logvar1 - logvar2))
     # print(f'const = {temp1.mean()}, coef={(th.exp(-logvar2) * 0.5).mean()}, mse={((mean1 - mean2) ** 2).mean().item()}')
 
-    return 0.5 * (
-        -1.0
-        + logvar2
-        - logvar1
-        + th.exp(logvar1 - logvar2)
-        + ((mean1 - mean2) ** 2) * th.exp(-logvar2)
-    )
+    return 0.5 * (-1.0 + logvar2 - logvar1 + th.exp(logvar1 - logvar2) + ((mean1 - mean2) ** 2) * th.exp(-logvar2))
 
 
 def approx_standard_normal_cdf(x):
@@ -80,11 +71,13 @@ def discretized_gaussian_log_likelihood(x, *, means, log_scales):
     assert log_probs.shape == x.shape
     return log_probs
 
+
 def gaussian_density(x, *, means, log_scales):
     from torch.distributions import Normal
+
     normal_dist = Normal(means, log_scales.exp())
     logp = normal_dist.log_prob(x)
-    return logp 
+    return logp
 
 
 def discretized_text_log_likelihood(x, *, means, log_scales):
@@ -100,7 +93,7 @@ def discretized_text_log_likelihood(x, *, means, log_scales):
     """
     print(x.shape, means.shape)
     # assert x.shape == means.shape == log_scales.shape
-    print(x, means) 
+    print(x, means)
     centered_x = x - means
     inv_stdv = th.exp(-log_scales)
     plus_in = inv_stdv * (centered_x + 1.0 / 255.0)
