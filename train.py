@@ -3,7 +3,8 @@ Train a diffusion model on images.
 """
 
 import argparse
-import json, torch, os
+import json
+import os
 import numpy as np
 from diffuseq.utils import dist_util, logger
 from diffuseq.text_datasets import load_data_text
@@ -21,8 +22,8 @@ from transformers import set_seed
 import wandb
 
 ### custom your wandb setting here ###
-# os.environ["WANDB_API_KEY"] = ""
-os.environ["WANDB_MODE"] = "offline"
+os.environ["WANDB_API_KEY"] = "7c18d47ede09b76c8d8e7d861b930edc81c2b0e8"
+os.environ["WANDB_MODE"] = "online"
 
 
 def create_argparser():
@@ -68,8 +69,8 @@ def main():
     # print('#'*30, 'CUDA_VISIBLE_DEVICES', os.environ['CUDA_VISIBLE_DEVICES'])
     model, diffusion = create_model_and_diffusion(**args_to_dict(args, load_defaults_config().keys()))
     # print('#'*30, 'cuda', dist_util.dev())
-    model.to(dist_util.dev())  #  DEBUG **
-    # model.cuda() #  DEBUG **
+    model.to(dist_util.dev())  # DEBUG **
+    # model.cuda() # DEBUG **
 
     pytorch_total_params = sum(p.numel() for p in model.parameters())
 

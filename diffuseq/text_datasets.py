@@ -50,7 +50,7 @@ def load_data_text(
             # drop_last=True,
             sampler=sampler,
             # shuffle=not deterministic,
-            num_workers=4,
+            num_workers=0,
         )
     else:
         data_loader = DataLoader(
@@ -59,7 +59,7 @@ def load_data_text(
             # drop_last=True,
             # sampler=sampler,
             shuffle=not deterministic,
-            num_workers=4,
+            num_workers=0,
         )
 
     if loop:
@@ -128,7 +128,7 @@ def helper_tokenize(sentence_lst, vocab_dict, seq_len):
         merge_and_mask,
         batched=True,
         num_proc=1,
-        desc=f"merge and mask",
+        desc="merge and mask",
     )
 
     def pad_function(group_lst):
@@ -143,7 +143,7 @@ def helper_tokenize(sentence_lst, vocab_dict, seq_len):
         pad_function,
         batched=True,
         num_proc=1,
-        desc=f"padding",
+        desc="padding",
     )
 
     print(lm_datasets, "padded dataset")

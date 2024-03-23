@@ -289,7 +289,7 @@ class TrainLoop:
             # print(cnt, p) ## DEBUG
             # print(cnt, p.grad)
             # cnt += 1
-            if p.grad != None:
+            if p.grad is not None:
                 sqsum += (p.grad**2).sum().item()
         logger.logkv_mean("grad_norm", np.sqrt(sqsum))
 

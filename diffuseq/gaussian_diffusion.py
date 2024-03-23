@@ -69,7 +69,7 @@ def get_named_beta_schedule(schedule_name, num_diffusion_timesteps):
 
 def betas_for_alpha_bar_left(num_diffusion_timesteps, alpha_bar, max_beta=0.999):
     """
-    Create a beta schedule that discretizes the given alpha_t_bar function, but shifts towards left interval starting from 0 which defines the cumulative product of (1-beta) over time from t = [0,1].
+    Create a beta schedule that discretizes the given alpha_bar function, but shifts towards left interval starting from 0 which defines the cumulative product of (1-beta) over time from t = [0,1].
 
     :param num_diffusion_timesteps: the number of betas to produce.
     :param alpha_bar: a lambda that takes an argument t from 0 to 1 and
@@ -89,7 +89,7 @@ def betas_for_alpha_bar_left(num_diffusion_timesteps, alpha_bar, max_beta=0.999)
 
 def betas_for_alpha_bar(num_diffusion_timesteps, alpha_bar, max_beta=0.999):
     """
-    Create a beta schedule that discretizes the given alpha_t_bar function,
+    Create a beta schedule that discretizes the given alpha_bar function,
     which defines the cumulative product of (1-beta) over time from t = [0,1].
 
     :param num_diffusion_timesteps: the number of betas to produce.
@@ -229,7 +229,7 @@ class GaussianDiffusion:
             + _extract_into_tensor(self.sqrt_one_minus_alphas_cumprod, t, x_start.shape) * noise
         )
 
-        if mask == None:
+        if mask is None:
             return x_t
         else:
             mask = th.broadcast_to(mask.unsqueeze(dim=-1), x_start.shape)
@@ -280,7 +280,7 @@ class GaussianDiffusion:
         if model_kwargs is None:
             model_kwargs = {}
 
-        B, C = x.size(0), x.size(-1)
+        B, _ = x.size(0), x.size(-1)
         assert t.shape == (B,)
         # print(x.shape)
         model_output = model(x, self._scale_timesteps(t), **model_kwargs)
@@ -367,7 +367,7 @@ class GaussianDiffusion:
 
         nonzero_mask = (t != 0).float().view(-1, *([1] * (len(x.shape) - 1)))  # no noise when t == 0
         sample = out["mean"] + nonzero_mask * th.exp(0.5 * out["log_variance"]) * noise
-        if mask == None:
+        if mask is None:
             pass
         else:
             sample = th.where(mask == 0, x_start, sample)
@@ -507,21 +507,21 @@ class GaussianDiffusion:
         # print(x_start_mean.device, noise.device)
         return x_start_mean + std * noise
 
-    def _token_discrete_loss(self, x_t, get_logits, input_ids, mask=None, truncate=False, t=None):
+    def _token_discrete_loss(self, x_0, get_logits, input_ids, mask=None, truncate=False, t=None):
         """
         the loss of -log p(w|z_0)
         :param x_start_mean: word embedding
         :return: x_0
         """
-        reshaped_x_t = x_t
-        logits = get_logits(reshaped_x_t)  # bsz, seqlen, vocab
+        reshaped_x_0 = x_0
+        logits = get_logits(reshaped_x_0)  # bsz, seqlen, vocab
         # print(logits.shape)
         loss_fct = th.nn.CrossEntropyLoss(reduction="none")
         decoder_nll = loss_fct(logits.view(-1, logits.size(-1)), input_ids.view(-1)).view(input_ids.shape)
-        if mask != None:
+        if mask is not None:
             decoder_nll *= mask
         # print(decoder_nll.shape)
-        if mask != None:
+        if mask is not None:
             decoder_nll = decoder_nll.sum(dim=-1) / mask.sum(dim=-1)
         else:
             decoder_nll = decoder_nll.mean(dim=-1)
@@ -546,7 +546,7 @@ class GaussianDiffusion:
         Compute training losses for a single timestep.
 
         :param model: the model to evaluate loss on.
-        :param x_start: the [N x C x ...] tensor of inputs. # not used unless fixing the input embeddings
+        # :param x_start: the [N x C x ...] tensor of inputs. # not used unless fixing the input embeddings
         :param t: a batch of timestep indices.
         :param model_kwargs: if not None, a dict of extra keyword arguments to
             pass to the model. This can be used for conditioning.
@@ -558,6 +558,7 @@ class GaussianDiffusion:
         assert "input_ids" in model_kwargs
         input_ids_x = model_kwargs.pop("input_ids").to(t.device).long()
         input_ids_mask = model_kwargs.pop("input_mask").to(t.device)
+        # embedded
         x_start_mean = model.model.module.get_embeds(input_ids_x)
 
         std = _extract_into_tensor(
@@ -566,31 +567,35 @@ class GaussianDiffusion:
         # print(std.shape, )
         # x_start_log_var = 2 * th.log(std)
         x_start = self._get_x_start(x_start_mean, std)
-        # print(x_start_mean.shape, x_start.shape)
+        # print(x_start_mean.shape, x_start.shape)]
         if noise is None:
             noise = th.randn_like(x_start)
 
         x_t = self.q_sample(x_start, t, noise=noise, mask=input_ids_mask)  # reparametrization trick.
-
-        get_logits = model.model.module.get_logits
 
         terms = {}
 
         target = x_start
         model_output = model(x_t, self._scale_timesteps(t), **model_kwargs)
         assert model_output.shape == target.shape == x_start.shape
-        terms["mse"] = mean_flat((target - model_output) ** 2)
 
+        # Lt-1
+        terms["mse"] = mean_flat((target - model_output) ** 2)
+        # L0
         model_out_x_start = self._x0_helper(model_output, x_t, t)["pred_xstart"]  # predicted_xstart = model_output
         t0_mask = t == 0
         t0_loss = mean_flat((x_start_mean - model_out_x_start) ** 2)
+        # L0 combined Lt-1
         terms["mse"] = th.where(t0_mask, t0_loss, terms["mse"])
 
+        # LT
         # tT_mask = (t == self.num_timesteps - 1)
         out_mean, _, _ = self.q_mean_variance(x_start, th.LongTensor([self.num_timesteps - 1]).to(x_start.device))
         tT_loss = mean_flat(out_mean**2)
 
-        decoder_nll = self._token_discrete_loss(x_start, get_logits, input_ids_x)  # embedding regularization
+        # Rounding error: embedding regularization
+        get_logits = model.model.module.get_logits
+        decoder_nll = self._token_discrete_loss(x_start, get_logits, input_ids_x)
         terms["nll"] = self._token_discrete_loss(
             model_out_x_start, get_logits, input_ids_x, mask=input_ids_mask, truncate=True, t=t
         )  # x_0->model_out_x_start
@@ -642,7 +647,7 @@ class GaussianDiffusion:
             print(t.shape)
             sample = langevin_fn(sample, mean_pred, sigma, self.alphas_cumprod_prev[t[0]], t, x)
 
-        if mask == None:
+        if mask is None:
             pass
         else:
             sample = th.where(mask == 0, x_start, sample)
