@@ -14,6 +14,7 @@ from transformers import set_seed
 from diffuseq.rounding import denoised_fn_round, get_weights
 from diffuseq.text_datasets import load_data_text
 from torch.cuda.amp import autocast
+
 # from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
 
 import time
@@ -25,12 +26,13 @@ from basic_utils import (
     add_dict_to_argparser,
     args_to_dict,
     load_model_emb,
-    load_tokenizer
+    load_tokenizer,
 )
 
+
 def create_argparser():
-    defaults = dict(model_path='', step=0, out_dir='', top_p=0, rejection_rate=0.0, note='none')
-    decode_defaults = dict(split='valid', clamp_step=0, seed2=105, clip_denoised=False, start_n=0)
+    defaults = dict(model_path="", step=0, out_dir="", top_p=0, rejection_rate=0.0, note="none")
+    decode_defaults = dict(split="valid", clamp_step=0, seed2=105, clip_denoised=False, start_n=0)
     defaults.update(load_defaults_config())
     defaults.update(decode_defaults)
     parser = argparse.ArgumentParser()
@@ -53,34 +55,37 @@ def main():
     config_path = os.path.join(os.path.split(args.model_path)[0], "training_args.json")
     print(config_path)
     # sys.setdefaultencoding('utf-8')
-    with open(config_path, 'rb', ) as f:
+    with open(
+        config_path,
+        "rb",
+    ) as f:
         training_args = json.load(f)
-    training_args['batch_size'] = args.batch_size
+    training_args["batch_size"] = args.batch_size
     args.__dict__.update(training_args)
     args.device = f"cuda:{CUDA_VISIBLE_DEVICES}"
 
     logger.log("### Creating model and diffusion...")
-    model, diffusion = create_model_and_diffusion(
-        **args_to_dict(args, load_defaults_config().keys())
-    )
+    model, diffusion = create_model_and_diffusion(**args_to_dict(args, load_defaults_config().keys()))
 
-    model.load_state_dict(
-        dist_util.load_state_dict(args.model_path, False, "model", map_location="cpu")
-    )
+    model.load_state_dict(dist_util.load_state_dict(args.model_path, False, "model", map_location="cpu"))
 
     pytorch_total_params = sum(p.numel() for p in model.parameters())
-    logger.log(f'### The parameter count is {pytorch_total_params}')
+    logger.log(f"### The parameter count is {pytorch_total_params}")
 
     model.eval().requires_grad_(False).to(dist_util.dev())
 
     tokenizer = load_tokenizer(args)
     # model_emb, tokenizer = load_model_emb(args, tokenizer)
-    
-    model_emb = th.nn.Embedding(
-        num_embeddings=tokenizer.vocab_size, 
-        embedding_dim=args.hidden_dim, 
-        _weight=model.word_embedding.weight.clone().cpu()
-    ).eval().requires_grad_(False)
+
+    model_emb = (
+        th.nn.Embedding(
+            num_embeddings=tokenizer.vocab_size,
+            embedding_dim=args.hidden_dim,
+            _weight=model.word_embedding.weight.clone().cpu(),
+        )
+        .eval()
+        .requires_grad_(False)
+    )
 
     model_emb.weight = th.nn.Parameter(model.word_embedding.weight.clone().cpu())
     model_emb_copy = get_weights(model_emb, args).eval().requires_grad_(False)
@@ -98,7 +103,7 @@ def main():
         split=args.split,
         loaded_vocab=tokenizer,
         model_emb=model_emb.cpu(),  # using the same embedding wight with tranining data
-        loop=False
+        loop=False,
     )
 
     start_t = time.time()
@@ -106,7 +111,7 @@ def main():
     # batch, cond = next(data_valid)
     # print(batch.shape)
 
-    model_base_name = os.path.basename(os.path.split(args.model_path)[0]) + f'.{os.path.split(args.model_path)[1]}'
+    model_base_name = os.path.basename(os.path.split(args.model_path)[0]) + f".{os.path.split(args.model_path)[1]}"
     out_dir = os.path.join(args.out_dir, f"{model_base_name.split('.ema')[0]}")
     if not os.path.isdir(out_dir):
         os.mkdir(out_dir)
@@ -130,8 +135,8 @@ def main():
             idx += 1
 
     except StopIteration:
-        print('### End of reading iteration...')
-    
+        print("### End of reading iteration...")
+
     model_emb.to(dist_util.dev())
 
     if idx % world_size and rank >= idx % world_size:
@@ -139,6 +144,7 @@ def main():
 
     if rank == 0:
         from tqdm import tqdm
+
         iterator = tqdm(all_test_data)
     else:
         iterator = iter(all_test_data)
@@ -150,9 +156,9 @@ def main():
                 dist.barrier(device_ids=[int(os.environ["LOCAL_RANK"])])
             continue
 
-        input_ids_x = cond.pop('input_ids').to(dist_util.dev())
+        input_ids_x = cond.pop("input_ids").to(dist_util.dev())
         x_start = model.get_embeds(input_ids_x)
-        input_ids_mask = cond.pop('input_mask')
+        input_ids_mask = cond.pop("input_mask")
         input_ids_mask_ori = input_ids_mask
 
         noise = th.randn_like(x_start)
@@ -166,11 +172,9 @@ def main():
             step_gap = 1
         else:
             args.use_ddim = True
-            step_gap = args.diffusion_steps//args.step
+            step_gap = args.diffusion_steps // args.step
 
-        sample_fn = (
-            diffusion.p_sample_loop if not args.use_ddim else diffusion.ddim_sample_loop
-        )
+        sample_fn = diffusion.p_sample_loop if not args.use_ddim else diffusion.ddim_sample_loop
 
         sample_shape = (x_start.shape[0], args.seq_len, args.hidden_dim)
         with autocast():
@@ -186,7 +190,7 @@ def main():
                 clamp_first=True,
                 mask=input_ids_mask,
                 x_start=x_start,
-                gap=step_gap
+                gap=step_gap,
             )
 
         # model_emb_copy.cpu()
@@ -220,14 +224,15 @@ def main():
 
         for i in range(world_size):
             if i == rank:  # Write files sequentially
-                fout = open(out_path, 'a')
-                for (recov, ref, src) in zip(word_lst_recover, word_lst_ref, word_lst_source):
+                fout = open(out_path, "a")
+                for recov, ref, src in zip(word_lst_recover, word_lst_ref, word_lst_source):
                     print(json.dumps({"recover": recov, "reference": ref, "source": src}), file=fout)
                 fout.close()
             dist.barrier(device_ids=[int(os.environ["LOCAL_RANK"])])
 
-    print('### Total takes {:.2f}s .....'.format(time.time() - start_t))
-    print(f'### Written the decoded output to {out_path}')
+    print("### Total takes {:.2f}s .....".format(time.time() - start_t))
+    print(f"### Written the decoded output to {out_path}")
+
 
 if __name__ == "__main__":
     main()

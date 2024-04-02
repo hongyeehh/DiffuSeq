@@ -42,5 +42,4 @@
   "denoise_rate": 0.2,
   "rejection_rate": 0.0,
   "reg_rate": 0.01,
-  "device": ""
 }

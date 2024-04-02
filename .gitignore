@@ -7,3 +7,6 @@ generation_outputs/
 generation_outputs/*
 *.log
 *.pth
+datasets/simpl/test.jsonl
+datasets/simpl/train.jsonl
+datasets/simpl/valid.jsonl
